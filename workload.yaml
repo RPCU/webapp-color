@@ -1,11 +1,15 @@
+# Openchoreo release definition file
+metadata:
+  name: webapp-color
 endpoints:
-  http:
+  - name: http
     type: HTTP
     port: 8080
-    visibility: [external]
-container:
+    visibility:
+      - external
+configurations:
   env:
-    - key: APP_COLOR
+    - name: APP_COLOR
       value: "blue"
-    - key: APP_PORT
+    - name: APP_PORT
       value: "8080"
