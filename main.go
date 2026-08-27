@@ -1,8 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 )
@@ -22,29 +23,30 @@ var availableColors = map[string]string{
 	"black":  "#000000",
 }
 
-func checkEnvColor(c string) string {
+func checkEnvColor(c string) (string, error) {
 	// Check if var is empty
-	_, exists := os.LookupEnv("APP_COLOR")
-	if !exists {
-		log.Fatalln("APP_COLOR env var should not be empty !")
+	if _, exists := os.LookupEnv("APP_COLOR"); !exists {
+		return "", fmt.Errorf("APP_COLOR env var should not be empty")
 	}
 	// Check if color is available
-	var cValue string
-	if value, t := availableColors[c]; t {
-		cValue = value
-	} else {
-		colorKeys := []string{}
-		for k := range availableColors {
-			colorKeys = append(colorKeys, k)
-		}
-		log.Fatalf("Color not supported ! get=%s\navailable=%v", c, colorKeys)
+	if value, ok := availableColors[c]; ok {
+		return value, nil
 	}
-	return cValue
+	colorKeys := make([]string, 0, len(availableColors))
+	for k := range availableColors {
+		colorKeys = append(colorKeys, k)
+	}
+	return "", fmt.Errorf("color not supported: get=%s available=%v", c, colorKeys)
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request) {
 	// Get color code if value is set and exist
-	cValue := checkEnvColor(os.Getenv("APP_COLOR"))
+	cValue, err := checkEnvColor(os.Getenv("APP_COLOR"))
+	if err != nil {
+		slog.Error("invalid color configuration", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	// Get hostname
 	h, _ := os.Hostname()
@@ -61,16 +63,23 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	// Html template rendering
 	t, err := template.ParseFiles("hello.html")
 	if err != nil {
-		log.Fatalln(err)
+		slog.Error("failed to parse template", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
-	err = t.Execute(w, data)
-	if err != nil {
-		log.Fatalln(err)
+	if err := t.Execute(w, data); err != nil {
+		slog.Error("failed to render template", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 }
 
 func main() {
-	// COnfigure application port if env var is set
+	// Structured JSON logging (slog emits uppercase levels: INFO, WARN, ERROR)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
+	// Configure application port if env var is set
 	appPort, exists := os.LookupEnv("APP_PORT")
 	if exists {
 		appPort = ":" + appPort
@@ -79,7 +88,15 @@ func main() {
 	}
 
 	// Check APP_COLOR env var and start webserver
-	checkEnvColor(os.Getenv("APP_COLOR"))
+	if _, err := checkEnvColor(os.Getenv("APP_COLOR")); err != nil {
+		slog.Error("startup configuration error", "err", err)
+		os.Exit(1)
+	}
+
+	slog.Info("starting webapp-color", "port", appPort)
 	http.HandleFunc("/", viewHandler)
-	log.Fatal(http.ListenAndServe(appPort, nil))
+	if err := http.ListenAndServe(appPort, nil); err != nil {
+		slog.Error("server stopped", "err", err)
+		os.Exit(1)
+	}
 }
