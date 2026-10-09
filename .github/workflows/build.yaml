@@ -1,0 +1,91 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+# Deploys are ordered: never let an older run overwrite a newer Workload.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/rpcu/webapp-color
+  OCC_VERSION: v1.3.1
+  OPENCHOREO_API_URL: https://api.didactiklabs.io
+  OCC_CLIENT_ID: ci-rpcu
+  OC_NAMESPACE: rpcu
+  OC_PROJECT: testing
+  OC_COMPONENT: webapp-color
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install occ
+        run: |
+          curl -sSfL "https://github.com/openchoreo/openchoreo/releases/download/${OCC_VERSION}/occ_${OCC_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C "${RUNNER_TEMP}" occ
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+
+      - name: Update the OpenChoreo Workload
+        env:
+          OCC_CLIENT_SECRET: ${{ secrets.OPENCHOREO_CLIENT_SECRET }}
+        run: |
+          # The git tag when building a tag, the immutable sha-<short> tag otherwise
+          # (same 7 chars as metadata-action's type=sha).
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            image_ref="${IMAGE}:${GITHUB_REF_NAME}"
+          else
+            image_ref="${IMAGE}:sha-${GITHUB_SHA::7}"
+          fi
+          echo "Deploying ${image_ref}"
+
+          # Token endpoint is discovered from the API; credentials come from
+          # OCC_CLIENT_ID / OCC_CLIENT_SECRET.
+          occ config controlplane update default --url "${OPENCHOREO_API_URL}"
+          occ login --client-credentials
+
+          # workload.yaml holds endpoints/env: occ apply replaces the whole spec.
+          occ workload create \
+            --namespace "${OC_NAMESPACE}" \
+            --project "${OC_PROJECT}" \
+            --component "${OC_COMPONENT}" \
+            --image "${image_ref}" \
+            --descriptor workload.yaml \
+            -o workload-cr.yaml
+          occ apply -f workload-cr.yaml
