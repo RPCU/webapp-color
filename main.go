@@ -15,6 +15,7 @@ var availableColors = map[string]string{
 	"lime":   "#00FF00",
 	"green":  "#008000",
 	"teal":   "#008080",
+	"cyan":   "#00FFFF",
 	"blue":   "#0000FF",
 	"navy":   "#000080",
 	"purple": "#800080",
