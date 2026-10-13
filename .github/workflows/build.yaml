@@ -62,7 +62,7 @@ jobs:
             | tar -xz -C "${RUNNER_TEMP}" occ
           echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
 
-      - name: Update the OpenChoreo Workload
+      - name: Sync env overrides and update the OpenChoreo Workload
         env:
           OCC_CLIENT_SECRET: ${{ secrets.OPENCHOREO_CLIENT_SECRET }}
         run: |
@@ -79,6 +79,22 @@ jobs:
           # OCC_CLIENT_ID / OCC_CLIENT_SECRET.
           occ config controlplane update default --url "${OPENCHOREO_API_URL}"
           occ login --client-credentials
+
+          # env-overrides/<env>.yaml -> ReleaseBinding <component>-<env> (before the
+          # Workload update, so we never race auto-deploy's releaseName).
+          for f in env-overrides/*.yaml; do
+            [ -e "${f}" ] || continue
+            occ releasebinding get "${OC_COMPONENT}-$(basename "${f}" .yaml)" --namespace "${OC_NAMESPACE}" > current.yaml
+            F="${f}" yq '
+              load(strenv(F)) as $f
+              | {"apiVersion": "openchoreo.dev/v1alpha1", "kind": "ReleaseBinding",
+                 "metadata": {"name": .metadata.name, "namespace": strenv(OC_NAMESPACE)},
+                 "spec": (.spec | pick(["owner", "environment", "releaseName", "state"]))
+                   * ($f | pick(["componentTypeEnvironmentConfigs", "traitEnvironmentConfigs"]))
+                   * {"workloadOverrides": {"container": ($f.configurations // {} | pick(["env", "files"]) | .[] |= map(with_entries(.key |= sub("^name$"; "key"))))}}}
+            ' current.yaml > binding.yaml
+            occ apply -f binding.yaml
+          done
 
           # workload.yaml holds endpoints/env: occ apply replaces the whole spec.
           occ workload create \

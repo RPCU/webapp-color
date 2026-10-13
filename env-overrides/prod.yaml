@@ -1,0 +1,13 @@
+# prod overrides on top of ../workload.yaml, synced by CI to the ReleaseBinding
+# webapp-color-prod on every push. Git is the source of truth: UI edits are reverted.
+# Promotion (which release runs in prod) stays manual.
+#  - configurations: same format as workload.yaml (env, files); endpoints/image
+#    are shared by all environments and ignored here.
+#  - componentTypeEnvironmentConfigs / traitEnvironmentConfigs: replicas,
+#    resources, alerting... (ComponentType / trait environmentConfigs schema).
+configurations:
+  env:
+    - name: APP_COLOR
+      value: red
+componentTypeEnvironmentConfigs:
+  replicas: 2
