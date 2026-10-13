@@ -18,6 +18,7 @@ var availableColors = map[string]string{
 	"cyan":   "#00FFFF",
 	"blue":   "#0000FF",
 	"navy":   "#000080",
+	"indigo": "#4B0082",
 	"purple": "#800080",
 	"pink":   "#FF00FF",
 	"brown":  "#A52A2A",
