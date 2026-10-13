@@ -13,3 +13,9 @@ configurations:
       value: "blue"
     - name: APP_PORT
       value: "8080"
+    # # SecretReference created with `occ secret create` (value never in Git)
+    # - name: APP_USER
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: test
+    #       key: user

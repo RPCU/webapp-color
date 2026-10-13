@@ -8,6 +8,6 @@
 configurations:
   env:
     - name: APP_COLOR
-      value: red
+      value: green
 componentTypeEnvironmentConfigs:
   replicas: 2
